@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  RECRUITER
+  CANDIDATE
+}
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  password        String
+  name            String
+  role            UserRole @default(CANDIDATE)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  resumes         Resume[]
+  jobs            Job[]
+}
+
+model Resume {
+  id              String   @id @default(uuid())
+  originalName    String
+  storagePath     String
+  status          String   @default("UPLOADED")
+  parsedContent   String?  @db.Text
+  uploadedAt      DateTime @default(now())
+  userId          String
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matches         MatchResult[]
+  
+  @@index([userId])
+}
+
+model Job {
+  id              String   @id @default(uuid())
+  title           String
+  description     String   @db.Text
+  skills          String?
+  createdAt       DateTime @default(now())
+  userId          String
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matches         MatchResult[]
+  
+  @@index([userId])
+}
+
+model MatchResult {
+  id              String   @id @default(uuid())
+  resumeId        String
+  jobId           String
+  score           Float
+  feedback        String?  @db.Text
+  matchedAt       DateTime @default(now())
+
+  resume          Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@index([resumeId])
+  @@index([jobId])
+}
