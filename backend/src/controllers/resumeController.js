@@ -1,136 +1,123 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const fs = require('fs/promises');
+const { v4: uuidv4 } = require('uuid');
+const prisma = require('../config/db');
 const redis = require('../config/redis');
 const rabbitMQ = require('../config/rabbitmq');
+const logger = require('../config/logger');
+const { ApiError, asyncHandler } = require('../middleware/errorHandler');
 
-exports.uploadResume = async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+const ownershipFilter = (user, id) => ({
+    id,
+    ...(user.role === 'ADMIN' ? {} : { userId: user.id }),
+});
 
-        const resumeId = uuidv4();
-        const filePath = req.file.path;
+exports.uploadResume = asyncHandler(async (req, res) => {
+    if (!req.file) throw new ApiError(400, 'No file uploaded');
 
-        const resume = await prisma.resume.create({
-            data: {
-                id: resumeId,
-                originalName: req.file.originalname,
-                storagePath: filePath,
-                status: 'UPLOADED',
-                userId: req.user.id
-            }
-        });
+    const resumeId = uuidv4();
+    const filePath = req.file.path;
 
-        await redis.set(`resume:status:${resumeId}`, 'UPLOADED', 3600);
-        
-        const payload = {
+    await prisma.resume.create({
+        data: {
             id: resumeId,
-            filename: req.file.originalname,
-            path: path.resolve(filePath),
-        };
-        await rabbitMQ.publish('resume.uploaded', payload);
+            originalName: req.file.originalname,
+            storagePath: filePath,
+            status: 'UPLOADED',
+            userId: req.user.id,
+        },
+    });
 
-        res.status(202).json({
-            message: 'Resume accepted',
-            data: { resumeId }
-        });
+    await redis.set(`resume:status:${resumeId}`, 'UPLOADED', 3600);
 
-    } catch (error) {
-        console.error('[ERROR] Upload Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+    await rabbitMQ.publish('resume.uploaded', {
+        id: resumeId,
+        filename: req.file.originalname,
+        path: path.resolve(filePath),
+    });
+
+    res.status(202).json({ message: 'Resume accepted', data: { resumeId } });
+});
+
+exports.getResumeStatus = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const cachedStatus = await redis.get(`resume:status:${id}`);
+    if (cachedStatus) return res.json({ status: cachedStatus });
+
+    const resume = await prisma.resume.findFirst({
+        where: ownershipFilter(req.user, id),
+        select: { status: true },
+    });
+
+    if (!resume) throw new ApiError(404, 'Resume not found');
+    res.json({ status: resume.status });
+});
+
+exports.getResumeResult = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const resume = await prisma.resume.findFirst({
+        where: ownershipFilter(req.user, id),
+        include: {
+            matches: { include: { job: true }, orderBy: { matchedAt: 'desc' }, take: 1 },
+        },
+    });
+
+    if (!resume) throw new ApiError(404, 'Resume not found');
+
+    const match = resume.matches[0];
+    let feedback = match?.feedback;
+    if (!feedback) {
+        feedback = await redis.get(`resume:feedback:${id}`);
     }
-};
 
-exports.getResumeStatus = async (req, res) => {
-    try {
-        const { id } = req.params;
-        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+    res.json({
+        resumeId: resume.id,
+        status: resume.status,
+        fileName: resume.originalName,
+        jobTitle: match?.job.title || 'Pending',
+        score: match?.score ?? 0,
+        feedback: feedback || 'Feedback pending...',
+        updatedAt: match?.matchedAt || resume.uploadedAt,
+    });
+});
 
-        const cachedStatus = await redis.get(`resume:status:${id}`);
-        if (cachedStatus) return res.json({ status: cachedStatus });
+exports.getMyResumes = asyncHandler(async (req, res) => {
+    const { page, limit } = req.query;
+    const skip = (page - 1) * limit;
 
-        const resume = await prisma.resume.findFirst({ 
-            where: { 
-                id,
-                userId: req.user.role === 'ADMIN' ? undefined : req.user.id
-            },
-            select: { status: true } 
-        });
-        
-        if (resume) return res.json({ status: resume.status });
-
-        res.status(404).json({ error: 'Resume not found' });
-    } catch (error) {
-        console.error('[ERROR] Get Status Error:', error);
-        res.status(500).json({ error: 'Server Error' });
-    }
-};
-
-exports.getResumeResult = async (req, res) => {
-    try {
-        const { id } = req.params;
-        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-
-        const resume = await prisma.resume.findFirst({
-             where: { 
-                 id,
-                 userId: req.user.role === 'ADMIN' ? undefined : req.user.id
-             },
-             include: { 
-                 matches: { 
-                     include: { job: true },
-                     orderBy: { matchedAt: 'desc' },
-                     take: 1
-                 } 
-             } 
-        });
-
-        if (!resume) return res.status(404).json({ error: 'Resume not found' });
-
-        const match = resume.matches[0];
-
-        let feedback = match?.feedback;
-        if (!feedback) {
-             feedback = await redis.get(`resume:feedback:${id}`);
-        }
-
-        res.json({
-            resumeId: resume.id,
-            status: resume.status,
-            fileName: resume.originalName,
-            jobTitle: match?.job.title || "Pending",
-            score: match?.score || 0,
-            feedback: feedback || "Feedback pending...",
-            updatedAt: match?.matchedAt || resume.uploadedAt
-        });
-
-    } catch (error) {
-        console.error('[ERROR] Get Result Error:', error);
-        res.status(500).json({ error: 'Server Error' });
-    }
-};
-
-exports.getMyResumes = async (req, res) => {
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-
-        const resumes = await prisma.resume.findMany({
+    const [resumes, total] = await Promise.all([
+        prisma.resume.findMany({
             where: { userId: req.user.id },
             orderBy: { uploadedAt: 'desc' },
-            include: {
-                matches: {
-                    include: { job: true },
-                    orderBy: { matchedAt: 'desc' },
-                    take: 1
-                }
-            }
-        });
+            include: { matches: { include: { job: true }, orderBy: { matchedAt: 'desc' }, take: 1 } },
+            skip,
+            take: limit,
+        }),
+        prisma.resume.count({ where: { userId: req.user.id } }),
+    ]);
 
-        res.json({ resumes });
-    } catch (error) {
-        console.error('[ERROR] Get resumes error:', error);
-        res.status(500).json({ error: 'Server Error' });
+    res.json({ resumes, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+});
+
+exports.deleteResume = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const resume = await prisma.resume.findFirst({ where: ownershipFilter(req.user, id) });
+    if (!resume) throw new ApiError(404, 'Resume not found');
+
+    await prisma.resume.delete({ where: { id } });
+
+    if (resume.storagePath) {
+        await fs.unlink(resume.storagePath).catch((err) =>
+            logger.warn({ err, path: resume.storagePath }, 'Failed to delete resume file')
+        );
     }
-};
+    await Promise.all([
+        redis.set(`resume:status:${id}`, 'DELETED', 60),
+        redis.client?.del(`resume:parsed:${id}`, `resume:score:${id}`, `resume:feedback:${id}`),
+    ]).catch(() => {});
+
+    res.json({ message: 'Resume deleted' });
+});

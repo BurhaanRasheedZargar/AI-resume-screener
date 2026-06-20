@@ -1,125 +1,139 @@
 import { useState } from 'react';
-import { UserPlus, Mail, Lock, User } from 'lucide-react';
-import { api } from '../api';
-import './Auth.css';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { UserPlus, User, Mail, Lock, Loader2, AlertCircle, GraduationCap, Briefcase } from 'lucide-react';
+import { api, errorMessage } from '../api';
+import { useAuth } from '../context/AuthContext';
+import PageTransition from '../components/layout/PageTransition';
+import { Button } from '../components/ui/Primitives';
 
-function Register({ onLogin }) {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    role: 'CANDIDATE'
-  });
+const ROLES = [
+  { value: 'CANDIDATE', title: 'Candidate', desc: 'Upload & analyze resumes', icon: GraduationCap },
+  { value: 'RECRUITER', title: 'Recruiter', desc: 'Post jobs & screen talent', icon: Briefcase },
+];
+
+export default function Register() {
+  const { user, login } = useAuth();
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'CANDIDATE' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  if (user) return <Navigate to="/dashboard" replace />;
 
-  const handleSubmit = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
-      const response = await api.register(formData);
-      localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      onLogin(response.user, response.token);
+      const res = await api.register(form);
+      login(res.user, res.token);
+      navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed. Please try again.');
+      setError(errorMessage(err, 'Registration failed. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-card">
-        <div className="auth-header">
-          <UserPlus size={32} className="auth-icon" />
-          <h1>Create Account</h1>
-          <p>Join us to get started</p>
-        </div>
-
-        {error && <div className="error-message">{error}</div>}
-
-        <form onSubmit={handleSubmit} className="auth-form">
-          <div className="form-group">
-            <label>
-              <User size={18} />
-              Full Name
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-              placeholder="John Doe"
-            />
+    <PageTransition>
+      <div className="auth-wrap">
+        <motion.div
+          className="card auth-card"
+          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 240, damping: 26 }}
+        >
+          <div className="auth-head">
+            <motion.div className="auth-badge" whileHover={{ rotate: 8, scale: 1.05 }}>
+              <UserPlus size={26} />
+            </motion.div>
+            <h1>Create account</h1>
+            <p>Join in seconds to get started</p>
           </div>
 
-          <div className="form-group">
-            <label>
-              <Mail size={18} />
-              Email
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              placeholder="you@example.com"
-            />
-          </div>
+          {error && (
+            <motion.div className="alert" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>{error}</span>
+            </motion.div>
+          )}
 
-          <div className="form-group">
-            <label>
-              <Lock size={18} />
-              Password
-            </label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              required
-              placeholder="••••••••"
-              minLength="6"
-            />
-          </div>
+          <form onSubmit={submit}>
+            <div className="field">
+              <label>
+                <User size={15} /> Full name
+              </label>
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Jane Doe"
+                required
+              />
+            </div>
+            <div className="field">
+              <label>
+                <Mail size={15} /> Email
+              </label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+            <div className="field">
+              <label>
+                <Lock size={15} /> Password
+              </label>
+              <input
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                placeholder="At least 8 characters"
+                minLength={8}
+                required
+              />
+            </div>
 
-          <div className="form-group">
-            <label>
-              <User size={18} />
-              Account Type
-            </label>
-            <select
-              name="role"
-              value={formData.role}
-              onChange={handleChange}
-              className="select-input"
-            >
-              <option value="CANDIDATE">Candidate</option>
-              <option value="RECRUITER">Recruiter</option>
-            </select>
-          </div>
+            <div className="field">
+              <label>
+                <User size={15} /> Account type
+              </label>
+              <div className="role-picker">
+                {ROLES.map((r) => {
+                  const Icon = r.icon;
+                  const active = form.role === r.value;
+                  return (
+                    <motion.button
+                      type="button"
+                      key={r.value}
+                      className={`role-opt ${active ? 'active' : ''}`}
+                      onClick={() => setForm({ ...form, role: r.value })}
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      <Icon size={18} className={active ? 'gradient-text' : 'muted'} />
+                      <span className="t">{r.title}</span>
+                      <span className="d">{r.desc}</span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </div>
 
-          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
-            {loading ? 'Creating account...' : 'Sign Up'}
-          </button>
-        </form>
+            <Button type="submit" variant="primary" className="btn-block" disabled={loading}>
+              {loading ? <Loader2 className="spinner" size={16} /> : <UserPlus size={16} />}
+              {loading ? 'Creating…' : 'Create account'}
+            </Button>
+          </form>
 
-        <p className="auth-footer">
-          Already have an account? <a href="#login">Sign in</a>
-        </p>
+          <p className="auth-foot">
+            Already have an account? <Link to="/login">Sign in</Link>
+          </p>
+        </motion.div>
       </div>
-    </div>
+    </PageTransition>
   );
 }
-
-export default Register;
-

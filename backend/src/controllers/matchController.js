@@ -1,43 +1,33 @@
 const rabbitMQ = require('../config/rabbitmq');
 const redis = require('../config/redis');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../config/db');
 const { getJobById } = require('./jobController');
-const prisma = new PrismaClient(); 
+const { ApiError, asyncHandler } = require('../middleware/errorHandler');
 
-exports.matchResume = async (req, res) => {
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+exports.matchResume = asyncHandler(async (req, res) => {
+    const { resumeId, jobId } = req.body;
 
-        const { resumeId, jobId } = req.body;
-        
-        const resume = await prisma.resume.findFirst({
-            where: { 
-                id: resumeId,
-                userId: req.user.role === 'ADMIN' ? undefined : req.user.id
-            }
-        });
+    const resume = await prisma.resume.findFirst({
+        where: {
+            id: resumeId,
+            ...(req.user.role === 'ADMIN' ? {} : { userId: req.user.id }),
+        },
+    });
+    if (!resume) throw new ApiError(404, 'Resume not found');
 
-        if (!resume) return res.status(404).json({ error: 'Resume not found' });
-        
-        const job = await getJobById(jobId);
-        if (!job) return res.status(404).json({ error: 'Job not found' });
+    const job = await getJobById(jobId);
+    if (!job) throw new ApiError(404, 'Job not found');
 
-        const payload = {
-            resumeId,
-            jobId,
-            jobDescription: job.description
-        };
+    await rabbitMQ.publish('resume.match_requested', {
+        resumeId,
+        jobId,
+        jobDescription: job.description,
+        resumeText: resume.parsedContent || undefined,
+    });
+    await redis.set(`resume:status:${resumeId}`, 'MATCHING_REQUESTED');
 
-        await rabbitMQ.publish('resume.match_requested', payload);
-        await redis.set(`resume:status:${resumeId}`, 'MATCHING_REQUESTED');
-
-        res.status(202).json({ 
-            message: 'Matching started',
-            statusEndpoint: `/api/resume/${resumeId}/status`
-        });
-
-    } catch (error) {
-        console.error('[ERROR] Match Error:', error);
-        res.status(500).json({ error: 'Server Error' });
-    }
-};
+    res.status(202).json({
+        message: 'Matching started',
+        statusEndpoint: `/api/resume/${resumeId}/status`,
+    });
+});

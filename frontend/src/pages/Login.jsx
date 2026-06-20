@@ -1,83 +1,96 @@
 import { useState } from 'react';
-import { LogIn, Mail, Lock } from 'lucide-react';
-import { api } from '../api';
-import './Auth.css';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { LogIn, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
+import { api, errorMessage } from '../api';
+import { useAuth } from '../context/AuthContext';
+import PageTransition from '../components/layout/PageTransition';
+import { Button } from '../components/ui/Primitives';
 
-function Login({ onLogin }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export default function Login() {
+  const { user, login } = useAuth();
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  if (user) return <Navigate to="/dashboard" replace />;
+
+  const submit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
-      const response = await api.login({ email, password });
-      localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      onLogin(response.user, response.token);
+      const res = await api.login(form);
+      login(res.user, res.token);
+      navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      setError(errorMessage(err, 'Login failed. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-card">
-        <div className="auth-header">
-          <LogIn size={32} className="auth-icon" />
-          <h1>Welcome Back</h1>
-          <p>Sign in to your account</p>
-        </div>
-
-        {error && <div className="error-message">{error}</div>}
-
-        <form onSubmit={handleSubmit} className="auth-form">
-          <div className="form-group">
-            <label>
-              <Mail size={18} />
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="you@example.com"
-            />
+    <PageTransition>
+      <div className="auth-wrap">
+        <motion.div
+          className="card auth-card"
+          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 240, damping: 26 }}
+        >
+          <div className="auth-head">
+            <motion.div className="auth-badge" whileHover={{ rotate: -8, scale: 1.05 }}>
+              <LogIn size={26} />
+            </motion.div>
+            <h1>Welcome back</h1>
+            <p>Sign in to continue to your dashboard</p>
           </div>
 
-          <div className="form-group">
-            <label>
-              <Lock size={18} />
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-            />
-          </div>
+          {error && (
+            <motion.div className="alert" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>{error}</span>
+            </motion.div>
+          )}
 
-          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
+          <form onSubmit={submit}>
+            <div className="field">
+              <label>
+                <Mail size={15} /> Email
+              </label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+            <div className="field">
+              <label>
+                <Lock size={15} /> Password
+              </label>
+              <input
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            <Button type="submit" variant="primary" className="btn-block" disabled={loading}>
+              {loading ? <Loader2 className="spinner" size={16} /> : <LogIn size={16} />}
+              {loading ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
 
-        <p className="auth-footer">
-          Don't have an account? <a href="#register">Sign up</a>
-        </p>
+          <p className="auth-foot">
+            Don't have an account? <Link to="/register">Create one</Link>
+          </p>
+        </motion.div>
       </div>
-    </div>
+    </PageTransition>
   );
 }
-
-export default Login;
-

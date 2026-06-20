@@ -1,83 +1,56 @@
 import axios from 'axios';
 
-const API_BASE = '/api';
+const client = axios.create({ baseURL: '/api' });
 
-const getAuthHeaders = () => {
+client.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+client.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const url = err.config?.url || '';
+    const isAuthCall = url.includes('/auth/login') || url.includes('/auth/register');
+    if (err.response?.status === 401 && !isAuthCall) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.dispatchEvent(new Event('auth:unauthorized'));
+    }
+    return Promise.reject(err);
+  }
+);
 
 export const api = {
-  register: async (userData) => {
-    const response = await axios.post(`${API_BASE}/auth/register`, userData);
-    return response.data;
-  },
+  register: (data) => client.post('/auth/register', data).then((r) => r.data),
+  login: (data) => client.post('/auth/login', data).then((r) => r.data),
+  getProfile: () => client.get('/auth/me').then((r) => r.data),
 
-  login: async (credentials) => {
-    const response = await axios.post(`${API_BASE}/auth/login`, credentials);
-    return response.data;
+  uploadResume: (file) => {
+    const form = new FormData();
+    form.append('resume', file);
+    return client.post('/resume/upload', form).then((r) => r.data);
   },
+  getMyResumes: () => client.get('/resume/my').then((r) => r.data),
+  getResumeStatus: (id) => client.get(`/resume/${id}/status`).then((r) => r.data),
+  getResumeResult: (id) => client.get(`/resume/${id}/result`).then((r) => r.data),
+  deleteResume: (id) => client.delete(`/resume/${id}`).then((r) => r.data),
 
-  getProfile: async () => {
-    const response = await axios.get(`${API_BASE}/auth/me`, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
+  createJob: (data) => client.post('/jobs', data).then((r) => r.data),
+  getMyJobs: () => client.get('/jobs/my').then((r) => r.data),
+  getAllJobs: () => client.get('/jobs').then((r) => r.data),
+  deleteJob: (id) => client.delete(`/jobs/${id}`).then((r) => r.data),
 
-  uploadResume: async (file) => {
-    const formData = new FormData();
-    formData.append('resume', file);
-    const response = await axios.post(`${API_BASE}/resume/upload`, formData, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
-
-  getMyResumes: async () => {
-    const response = await axios.get(`${API_BASE}/resume/my`, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
-
-  getResumeStatus: async (resumeId) => {
-    const response = await axios.get(`${API_BASE}/resume/${resumeId}/status`, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
-
-  getResumeResult: async (resumeId) => {
-    const response = await axios.get(`${API_BASE}/resume/${resumeId}/result`, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
-
-  createJob: async (jobData) => {
-    const response = await axios.post(`${API_BASE}/jobs`, jobData, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
-
-  getMyJobs: async () => {
-    const response = await axios.get(`${API_BASE}/jobs/my`, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  },
-
-  getAllJobs: async () => {
-    const response = await axios.get(`${API_BASE}/jobs`);
-    return response.data;
-  },
-
-  triggerMatch: async (resumeId, jobId) => {
-    const response = await axios.post(`${API_BASE}/match`, { resumeId, jobId }, {
-      headers: getAuthHeaders()
-    });
-    return response.data;
-  }
+  triggerMatch: (resumeId, jobId) =>
+    client.post('/match', { resumeId, jobId }).then((r) => r.data),
 };
+
+export function errorMessage(err, fallback = 'Something went wrong') {
+  const data = err?.response?.data;
+  if (!data) return fallback;
+  if (Array.isArray(data.details) && data.details.length) {
+    return data.details.map((d) => d.message).join(', ');
+  }
+  return data.error || fallback;
+}

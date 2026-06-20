@@ -1,70 +1,76 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../config/db');
+const { ApiError, asyncHandler } = require('../middleware/errorHandler');
 
-exports.createJob = async (req, res) => {
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-        if (req.user.role !== 'RECRUITER' && req.user.role !== 'ADMIN') {
-            return res.status(403).json({ error: 'Only recruiters can create jobs' });
-        }
+exports.createJob = asyncHandler(async (req, res) => {
+    const { title, description, skills_required } = req.body;
 
-        const { title, description, skills_required } = req.body;
-        
-        const job = await prisma.job.create({
-            data: {
-                title,
-                description,
-                skills: JSON.stringify(skills_required || []),
-                userId: req.user.id
-            }
-        });
+    const job = await prisma.job.create({
+        data: {
+            title,
+            description,
+            skills: JSON.stringify(skills_required || []),
+            userId: req.user.id,
+        },
+    });
 
-        res.status(201).json({ message: 'Job Created', job });
-    } catch (error) {
-        console.error('[ERROR] Create Job Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-};
+    res.status(201).json({ message: 'Job Created', job });
+});
 
-exports.getAllJobs = async (req, res) => {
-    try {
-        const jobs = await prisma.job.findMany({
+exports.getAllJobs = asyncHandler(async (req, res) => {
+    const { page, limit } = req.query;
+    const skip = (page - 1) * limit;
+
+    const [jobs, total] = await Promise.all([
+        prisma.job.findMany({
             orderBy: { createdAt: 'desc' },
-            include: {
-                user: {
-                    select: { name: true, email: true }
-                }
-            }
-        });
-        res.json(jobs);
-    } catch (error) {
-        console.error('[ERROR] Get All Jobs Error:', error);
-        res.status(500).json({ error: 'Server Error' });
-    }
-};
+            include: { user: { select: { name: true, email: true } } },
+            skip,
+            take: limit,
+        }),
+        prisma.job.count(),
+    ]);
 
-exports.getMyJobs = async (req, res) => {
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+    res.set('X-Total-Count', String(total));
+    res.set('X-Total-Pages', String(Math.ceil(total / limit)));
+    res.json(jobs);
+});
 
-        const jobs = await prisma.job.findMany({
+exports.getMyJobs = asyncHandler(async (req, res) => {
+    const { page, limit } = req.query;
+    const skip = (page - 1) * limit;
+
+    const [jobs, total] = await Promise.all([
+        prisma.job.findMany({
             where: { userId: req.user.id },
             orderBy: { createdAt: 'desc' },
-            include: {
-                matches: {
-                    include: { resume: true },
-                    orderBy: { score: 'desc' }
-                }
-            }
-        });
+            include: { matches: { include: { resume: true }, orderBy: { score: 'desc' } } },
+            skip,
+            take: limit,
+        }),
+        prisma.job.count({ where: { userId: req.user.id } }),
+    ]);
 
-        res.json({ jobs });
-    } catch (error) {
-        console.error('[ERROR] Get My Jobs Error:', error);
-        res.status(500).json({ error: 'Server Error' });
-    }
-};
+    res.json({ jobs, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+});
 
-exports.getJobById = async (id) => {
-    return await prisma.job.findUnique({ where: { id } });
-};
+exports.getJob = asyncHandler(async (req, res) => {
+    const job = await prisma.job.findUnique({
+        where: { id: req.params.id },
+        include: { user: { select: { name: true, email: true } } },
+    });
+    if (!job) throw new ApiError(404, 'Job not found');
+    res.json(job);
+});
+
+exports.deleteJob = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const where = { id, ...(req.user.role === 'ADMIN' ? {} : { userId: req.user.id }) };
+
+    const job = await prisma.job.findFirst({ where });
+    if (!job) throw new ApiError(404, 'Job not found');
+
+    await prisma.job.delete({ where: { id } });
+    res.json({ message: 'Job deleted' });
+});
+
+exports.getJobById = (id) => prisma.job.findUnique({ where: { id } });

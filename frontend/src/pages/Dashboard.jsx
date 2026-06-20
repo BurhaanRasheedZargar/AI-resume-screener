@@ -1,371 +1,284 @@
-import { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, CheckCircle, Loader2, Play, Briefcase, Plus, List, TrendingUp } from 'lucide-react';
-import { api } from '../api';
-import './Dashboard.css';
+import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { FileText, Briefcase, Compass, Plus, Inbox, Sparkles } from 'lucide-react';
+import { api, errorMessage } from '../api';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import Navbar from '../components/layout/Navbar';
+import PageTransition from '../components/layout/PageTransition';
+import { Button, Card } from '../components/ui/Primitives';
+import Modal from '../components/ui/Modal';
+import UploadDropzone from '../components/resume/UploadDropzone';
+import ResumeCard from '../components/resume/ResumeCard';
+import ResumeAnalysis from '../components/resume/ResumeAnalysis';
+import JobCard from '../components/job/JobCard';
+import JobForm from '../components/job/JobForm';
 
-function Dashboard({ user }) {
-  const [activeTab, setActiveTab] = useState(user?.role === 'CANDIDATE' ? 'resumes' : 'jobs');
-  const [file, setFile] = useState(null);
-  const [resumeId, setResumeId] = useState('');
-  const [status, setStatus] = useState('');
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [resumes, setResumes] = useState([]);
-  const [jobs, setJobs] = useState([]);
-  const [allJobs, setAllJobs] = useState([]);
-  const [selectedJob, setSelectedJob] = useState('');
-  const [showJobForm, setShowJobForm] = useState(false);
-  const [newJob, setNewJob] = useState({ title: '', description: '', skills_required: [] });
-  const intervalRef = useRef(null);
-
-  useEffect(() => {
-    loadData();
-  }, [user, activeTab]);
-
-  useEffect(() => {
-    if (resumeId && status !== 'COMPLETED' && status !== 'FAILED') {
-      intervalRef.current = setInterval(async () => {
-        try {
-          const data = await api.getResumeStatus(resumeId);
-          setStatus(data.status);
-          
-          if (data.status === 'COMPLETED') {
-            const resultData = await api.getResumeResult(resumeId);
-            setResult(resultData);
-            if (intervalRef.current) {
-              clearInterval(intervalRef.current);
-              intervalRef.current = null;
-            }
-            loadData();
-          }
-        } catch (err) {
-          console.error('[ERROR] Status polling error:', err);
-        }
-      }, 2000);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [resumeId, status]);
-
-  const loadData = async () => {
-    try {
-      if (user?.role === 'CANDIDATE' || user?.role === 'ADMIN') {
-        const resumesData = await api.getMyResumes();
-        setResumes(resumesData.resumes || []);
-      }
-      if (user?.role === 'RECRUITER' || user?.role === 'ADMIN') {
-        const jobsData = await api.getMyJobs();
-        setJobs(jobsData.jobs || []);
-      }
-      const allJobsData = await api.getAllJobs();
-      setAllJobs(allJobsData || []);
-    } catch (err) {
-      console.error('[ERROR] Load data error:', err);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!file) return;
-    setLoading(true);
-    try {
-      const response = await api.uploadResume(file);
-      setResumeId(response.data.resumeId);
-      setStatus('UPLOADED');
-      setFile(null);
-      loadData();
-    } catch (err) {
-      console.error('[ERROR] Upload failed:', err);
-      alert(err.response?.data?.error || 'Upload failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const createJob = async () => {
-    try {
-      await api.createJob(newJob);
-      setShowJobForm(false);
-      setNewJob({ title: '', description: '', skills_required: [] });
-      loadData();
-    } catch (err) {
-      console.error('[ERROR] Job creation failed:', err);
-      alert(err.response?.data?.error || 'Job creation failed.');
-    }
-  };
-
-  const triggerMatch = async (resumeIdToMatch, jobIdToMatch) => {
-    try {
-      await api.triggerMatch(resumeIdToMatch, jobIdToMatch);
-      setStatus('MATCHING_REQUESTED');
-      loadData();
-    } catch (err) {
-      console.error('[ERROR] Match trigger failed:', err);
-      alert('Failed to start analysis.');
-    }
-  };
-
-  const getStatusColor = (status) => {
-    const statusMap = {
-      'UPLOADED': '#3b82f6',
-      'PARSING': '#f59e0b',
-      'PARSED': '#8b5cf6',
-      'MATCHING_REQUESTED': '#8b5cf6',
-      'MATCHED': '#10b981',
-      'COMPLETED': '#10b981',
-      'FAILED': '#ef4444'
-    };
-    return statusMap[status] || '#6b7280';
-  };
-
+function Empty({ icon: Icon, title, sub }) {
   return (
-    <div className="dashboard-container">
-      <div className="dashboard-header">
-        <h1>Dashboard</h1>
-        <p>Welcome back, {user?.name}</p>
+    <motion.div className="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <span className="em-icon">
+        <Icon size={24} />
+      </span>
+      <div>
+        <div style={{ fontWeight: 600, color: 'var(--text)' }}>{title}</div>
+        <div style={{ fontSize: 13 }}>{sub}</div>
       </div>
+    </motion.div>
+  );
+}
 
-      <div className="dashboard-tabs">
-        {user?.role === 'CANDIDATE' && (
-          <button
-            className={activeTab === 'resumes' ? 'tab active' : 'tab'}
-            onClick={() => setActiveTab('resumes')}
-          >
-            <FileText size={18} /> My Resumes
-          </button>
-        )}
-        {(user?.role === 'RECRUITER' || user?.role === 'ADMIN') && (
-          <button
-            className={activeTab === 'jobs' ? 'tab active' : 'tab'}
-            onClick={() => setActiveTab('jobs')}
-          >
-            <Briefcase size={18} /> My Jobs
-          </button>
-        )}
-        <button
-          className={activeTab === 'browse' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('browse')}
-        >
-          <List size={18} /> Browse Jobs
-        </button>
-      </div>
-
-      <div className="dashboard-content">
-        {activeTab === 'resumes' && (
-          <div className="tab-content">
-            <div className="section-header">
-              <h2>Upload Resume</h2>
-            </div>
-            <div className="card">
-              <div className="upload-area">
-                <input
-                  type="file"
-                  onChange={e => setFile(e.target.files[0])}
-                  accept=".pdf,.docx"
-                  className="file-input"
-                />
-                <button
-                  onClick={handleUpload}
-                  disabled={loading || !file}
-                  className="btn btn-primary"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="spinner" size={18} />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload size={18} />
-                      Upload Resume
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {resumeId && (
-              <div className="card">
-                <div className="status-section">
-                  <h3>Current Upload Status</h3>
-                  <div className="status-indicator-wrapper">
-                    <div
-                      className="status-dot"
-                      style={{ backgroundColor: getStatusColor(status) }}
-                    />
-                    <span className="status-text">{status || 'PENDING'}</span>
-                  </div>
-                  {status !== 'COMPLETED' && status !== 'FAILED' && selectedJob && (
-                    <button
-                      onClick={() => triggerMatch(resumeId, selectedJob)}
-                      disabled={status === 'MATCHING_REQUESTED'}
-                      className="btn btn-primary"
-                    >
-                      <Play size={18} /> Start Analysis
-                    </button>
-                  )}
-                </div>
-                {status !== 'COMPLETED' && status !== 'FAILED' && (
-                  <div className="progress-bar-container">
-                    <div className="progress-bar" />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {result && (
-              <div className="card result-card">
-                <div className="result-header">
-                  <CheckCircle className="success-icon" size={24} />
-                  <h2>Analysis Complete</h2>
-                </div>
-                <div className="score-display">
-                  <span className="score-label">Match Score</span>
-                  <span className="score-value">{result.score}%</span>
-                </div>
-                <div className="feedback-section">
-                  <h3>AI Feedback</h3>
-                  <div className="feedback-content">{result.feedback}</div>
-                </div>
-              </div>
-            )}
-
-            <div className="section-header">
-              <h2>My Resumes</h2>
-            </div>
-            <div className="resumes-grid">
-              {resumes.map((resume) => (
-                <div key={resume.id} className="resume-card">
-                  <FileText size={24} />
-                  <h3>{resume.originalName}</h3>
-                  <div className="status-badge" style={{ backgroundColor: getStatusColor(resume.status) + '20', color: getStatusColor(resume.status) }}>
-                    {resume.status}
-                  </div>
-                  {resume.matches?.[0] && (
-                    <div className="match-info">
-                      <TrendingUp size={16} />
-                      <span>Score: {resume.matches[0].score}%</span>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => {
-                      setResumeId(resume.id);
-                      setStatus(resume.status);
-                      if (resume.status === 'COMPLETED') {
-                        api.getResumeResult(resume.id).then(setResult);
-                      }
-                    }}
-                    className="btn btn-secondary"
-                  >
-                    View Details
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'jobs' && (
-          <div className="tab-content">
-            <div className="section-header">
-              <h2>My Job Postings</h2>
-              <button onClick={() => setShowJobForm(!showJobForm)} className="btn btn-primary">
-                <Plus size={18} /> Create Job
-              </button>
-            </div>
-
-            {showJobForm && (
-              <div className="card">
-                <h3>Create New Job</h3>
-                <div className="form-group">
-                  <label>Job Title</label>
-                  <input
-                    type="text"
-                    value={newJob.title}
-                    onChange={(e) => setNewJob({ ...newJob, title: e.target.value })}
-                    placeholder="e.g., Senior Software Engineer"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Description</label>
-                  <textarea
-                    value={newJob.description}
-                    onChange={(e) => setNewJob({ ...newJob, description: e.target.value })}
-                    placeholder="Job description and requirements..."
-                    rows="5"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Required Skills (comma-separated)</label>
-                  <input
-                    type="text"
-                    value={newJob.skills_required.join(', ')}
-                    onChange={(e) => setNewJob({
-                      ...newJob,
-                      skills_required: e.target.value.split(',').map(s => s.trim()).filter(s => s)
-                    })}
-                    placeholder="e.g., JavaScript, React, Node.js"
-                  />
-                </div>
-                <div className="form-actions">
-                  <button onClick={createJob} className="btn btn-primary">Create Job</button>
-                  <button onClick={() => setShowJobForm(false)} className="btn btn-secondary">Cancel</button>
-                </div>
-              </div>
-            )}
-
-            <div className="jobs-grid">
-              {jobs.map((job) => (
-                <div key={job.id} className="job-card">
-                  <Building2 size={24} />
-                  <h3>{job.title}</h3>
-                  <p className="job-description">{job.description.substring(0, 150)}...</p>
-                  {job.matches?.length > 0 && (
-                    <div className="match-count">
-                      {job.matches.length} resume{job.matches.length !== 1 ? 's' : ''} matched
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'browse' && (
-          <div className="tab-content">
-            <div className="section-header">
-              <h2>Browse All Jobs</h2>
-            </div>
-            <div className="jobs-grid">
-              {allJobs.map((job) => (
-                <div key={job.id} className="job-card">
-                  <Building2 size={24} />
-                  <h3>{job.title}</h3>
-                  <p className="job-description">{job.description.substring(0, 150)}...</p>
-                  {user?.role === 'CANDIDATE' && resumeId && (
-                    <button
-                      onClick={() => {
-                        setSelectedJob(job.id);
-                        triggerMatch(resumeId, job.id);
-                      }}
-                      className="btn btn-primary"
-                    >
-                      Match Resume
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+function Skeletons({ count = 3 }) {
+  return (
+    <div className="grid" style={{ gap: 14 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="skeleton" style={{ height: 96 }} />
+      ))}
     </div>
   );
 }
 
-export default Dashboard;
+export default function Dashboard() {
+  const { user } = useAuth();
+  const toast = useToast();
 
+  const canResumes = user?.role === 'CANDIDATE' || user?.role === 'ADMIN';
+  const canJobs = user?.role === 'RECRUITER' || user?.role === 'ADMIN';
+
+  const tabs = useMemo(() => {
+    const t = [];
+    if (canResumes) t.push({ key: 'resumes', label: 'My Resumes', icon: FileText });
+    if (canJobs) t.push({ key: 'jobs', label: 'My Jobs', icon: Briefcase });
+    t.push({ key: 'browse', label: 'Browse Jobs', icon: Compass });
+    return t;
+  }, [canResumes, canJobs]);
+
+  const [activeTab, setActiveTab] = useState(canResumes ? 'resumes' : 'jobs');
+  const [resumes, setResumes] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [allJobs, setAllJobs] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [showJobModal, setShowJobModal] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  const loadResumes = async () => {
+    try {
+      const d = await api.getMyResumes();
+      setResumes(d.resumes || []);
+    } catch {
+      /* ignore */
+    }
+  };
+  const loadJobs = async () => {
+    try {
+      const d = await api.getMyJobs();
+      setJobs(d.jobs || []);
+    } catch {
+      /* ignore */
+    }
+  };
+  const loadAllJobs = async () => {
+    try {
+      const d = await api.getAllJobs();
+      setAllJobs(Array.isArray(d) ? d : d.jobs || []);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      await Promise.all([canResumes && loadResumes(), canJobs && loadJobs(), loadAllJobs()].filter(Boolean));
+      setLoaded(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleUpload = async (file) => {
+    setUploading(true);
+    try {
+      const res = await api.uploadResume(file);
+      toast('Resume uploaded', 'success');
+      await loadResumes();
+      const id = res?.data?.resumeId;
+      if (id) setSelected({ id, originalName: file.name, status: 'UPLOADED', uploadedAt: new Date().toISOString() });
+    } catch (err) {
+      toast(errorMessage(err, 'Upload failed'), 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteResume = async (resume) => {
+    try {
+      await api.deleteResume(resume.id);
+      toast('Resume deleted', 'success');
+      if (selected?.id === resume.id) setSelected(null);
+      loadResumes();
+    } catch (err) {
+      toast(errorMessage(err, 'Could not delete'), 'error');
+    }
+  };
+
+  const handleDeleteJob = async (job) => {
+    try {
+      await api.deleteJob(job.id);
+      toast('Job deleted', 'success');
+      loadJobs();
+      loadAllJobs();
+    } catch (err) {
+      toast(errorMessage(err, 'Could not delete'), 'error');
+    }
+  };
+
+  return (
+    <PageTransition>
+      <Navbar />
+      <div className="container dash">
+        <motion.div className="dash-head" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+          <h1>
+            Welcome back, <span className="gradient-text">{user?.name?.split(' ')[0]}</span>
+          </h1>
+          <p>Upload, analyze and match resumes with AI.</p>
+        </motion.div>
+
+        <div className="tabs">
+          {tabs.map((t) => (
+            <button key={t.key} className={`tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>
+              {activeTab === t.key && <motion.span layoutId="tabpill" className="tab__pill" transition={{ type: 'spring', stiffness: 380, damping: 30 }} />}
+              <t.icon size={16} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25 }}
+          >
+            {activeTab === 'resumes' && (
+              <>
+                <Card style={{ marginBottom: 24 }}>
+                  <div className="section-head" style={{ margin: '0 0 14px' }}>
+                    <h2>Upload a resume</h2>
+                  </div>
+                  <UploadDropzone onUpload={handleUpload} uploading={uploading} />
+                </Card>
+
+                <div className="dash-split">
+                  <div>
+                    <div className="section-head">
+                      <h2>My Resumes</h2>
+                      <span className="dim">{resumes.length}</span>
+                    </div>
+                    {!loaded ? (
+                      <Skeletons />
+                    ) : resumes.length ? (
+                      <div className="grid" style={{ gap: 14 }}>
+                        <AnimatePresence>
+                          {resumes.map((r, i) => (
+                            <ResumeCard
+                              key={r.id}
+                              resume={r}
+                              delay={i * 0.05}
+                              selected={selected?.id === r.id}
+                              onSelect={setSelected}
+                              onDelete={handleDeleteResume}
+                            />
+                          ))}
+                        </AnimatePresence>
+                      </div>
+                    ) : (
+                      <Empty icon={Inbox} title="No resumes yet" sub="Upload one above to get started." />
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="section-head">
+                      <h2>Results</h2>
+                    </div>
+                    {selected ? (
+                      <ResumeAnalysis key={selected.id} resume={selected} jobs={allJobs} onCompleted={loadResumes} />
+                    ) : (
+                      <Card className="analysis-empty">
+                        <span className="ae-icon">
+                          <Sparkles size={26} />
+                        </span>
+                        <div>
+                          <div style={{ fontWeight: 600, color: 'var(--text)' }}>Select a resume</div>
+                          <div style={{ fontSize: 13 }}>Pick a resume to see its pipeline, score and AI feedback.</div>
+                        </div>
+                      </Card>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeTab === 'jobs' && (
+              <>
+                <div className="section-head">
+                  <h2>My Job Postings</h2>
+                  <Button onClick={() => setShowJobModal(true)}>
+                    <Plus size={16} /> Create job
+                  </Button>
+                </div>
+                {!loaded ? (
+                  <Skeletons count={4} />
+                ) : jobs.length ? (
+                  <div className="grid grid-cards">
+                    <AnimatePresence>
+                      {jobs.map((j, i) => (
+                        <JobCard key={j.id} job={j} variant="mine" delay={i * 0.05} onDelete={handleDeleteJob} />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <Empty icon={Briefcase} title="No jobs yet" sub="Create your first job posting." />
+                )}
+              </>
+            )}
+
+            {activeTab === 'browse' && (
+              <>
+                <div className="section-head">
+                  <h2>Browse All Jobs</h2>
+                  <span className="dim">{allJobs.length}</span>
+                </div>
+                {!loaded ? (
+                  <Skeletons count={6} />
+                ) : allJobs.length ? (
+                  <div className="grid grid-cards">
+                    <AnimatePresence>
+                      {allJobs.map((j, i) => (
+                        <JobCard key={j.id} job={j} variant="browse" delay={i * 0.05} />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <Empty icon={Compass} title="No jobs posted yet" sub="Check back soon." />
+                )}
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      <Modal open={showJobModal} onClose={() => setShowJobModal(false)} title="Create a job">
+        <JobForm
+          onCreated={() => {
+            setShowJobModal(false);
+            loadJobs();
+            loadAllJobs();
+          }}
+          onCancel={() => setShowJobModal(false)}
+        />
+      </Modal>
+    </PageTransition>
+  );
+}
