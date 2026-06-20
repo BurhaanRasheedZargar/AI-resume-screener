@@ -7,7 +7,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu \
+RUN ARCH="$(uname -m)"; \
+    if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then \
+        pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu; \
+    else \
+        pip install --no-cache-dir torch==2.5.1; \
+    fi \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY . .

@@ -132,6 +132,48 @@ docker compose down -v
 
 ---
 
+## ☁️ Deploy for free on Oracle Cloud (Always Free ARM)
+
+The whole stack runs on a single **Always Free** Ampere (ARM) VM — no code changes, just `docker compose`. Images are multi-arch and the worker's Dockerfile auto-selects the right PyTorch build for ARM.
+
+> The Always Free A1 allowance is **2 OCPU / 12 GB RAM** (since June 15, 2026). That fits everything if you trim the LLM's memory (see step 6). A1 capacity can be scarce — if you hit "out of capacity", retry or pick a different home region.
+
+1. **Create the VM** — in the Oracle Cloud console: *Compute → Instances → Create*. Choose shape **VM.Standard.A1.Flex** (2 OCPU, 12 GB), image **Ubuntu 22.04/24.04**, and download the SSH key.
+2. **Open the app port (cloud firewall)** — *Networking → VCN → Security List → Add Ingress Rule*: source `0.0.0.0/0`, TCP, destination port **8080**.
+3. **Open the app port (host firewall)** — Oracle's Ubuntu images block ports by default:
+   ```bash
+   sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8080 -j ACCEPT
+   sudo netfilter-persistent save        # or: sudo ufw allow 8080
+   ```
+4. **Install Docker**
+   ```bash
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo usermod -aG docker $USER && newgrp docker
+   ```
+5. **Clone the repo**
+   ```bash
+   git clone https://github.com/BurhaanRasheedZargar/AI-resume-screener.git
+   cd AI-resume-screener
+   cp .env.example .env
+   ```
+6. **Edit `.env`** — set a real secret and trim memory for 12 GB:
+   ```env
+   JWT_SECRET=<output of: openssl rand -hex 32>
+   MODEL_DTYPE=bfloat16            # ~halves the 1.5B model's RAM
+   # or use a smaller model instead:
+   # LLM_MODEL=Qwen/Qwen2.5-0.5B-Instruct
+   ```
+7. **Launch**
+   ```bash
+   docker compose up -d --build
+   docker compose logs -f ai-worker   # first run downloads the model (a few minutes)
+   ```
+8. **Open** `http://<your-vm-public-ip>:8080`.
+
+Only port 8080 (the frontend) is exposed publicly — the database, Redis, RabbitMQ, and API ports are bound to `localhost` on the VM. To serve on port 80 instead, set `FRONTEND_PORT=80` in `.env` and open port 80 in both firewalls.
+
+---
+
 ## 🧑‍💻 Manual / local development
 
 **Prerequisites:** Node.js 20+, Python 3.10+, and running PostgreSQL, Redis, and RabbitMQ instances.

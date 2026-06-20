@@ -14,6 +14,7 @@ UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "../backend/uploads")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
 DEVICE = os.getenv("DEVICE")
+MODEL_DTYPE = os.getenv("MODEL_DTYPE")
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "320"))
 GEN_TEMPERATURE = float(os.getenv("GEN_TEMPERATURE", "0.7"))
 

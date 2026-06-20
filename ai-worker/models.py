@@ -21,6 +21,19 @@ def _resolve_device():
 
 DEVICE = _resolve_device()
 
+_DTYPES = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}
+
+
+def _resolve_dtype():
+    requested = (config.MODEL_DTYPE or "auto").lower()
+    if requested == "auto":
+        return torch.float16 if DEVICE == "cuda" else torch.float32
+    dtype = _DTYPES.get(requested, torch.float32)
+    if DEVICE == "cpu" and dtype == torch.float16:
+        log.warning("float16 is poorly supported on CPU; falling back to float32")
+        return torch.float32
+    return dtype
+
 _embedder = None
 _tokenizer = None
 _llm = None
@@ -41,8 +54,8 @@ def get_llm():
     if _llm is None:
         with _llm_lock:
             if _llm is None:
-                log.info("Loading LLM '%s' on %s", config.LLM_MODEL, DEVICE)
-                dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+                dtype = _resolve_dtype()
+                log.info("Loading LLM '%s' on %s (%s)", config.LLM_MODEL, DEVICE, dtype)
                 tokenizer = AutoTokenizer.from_pretrained(config.LLM_MODEL, trust_remote_code=True)
                 model = AutoModelForCausalLM.from_pretrained(
                     config.LLM_MODEL,

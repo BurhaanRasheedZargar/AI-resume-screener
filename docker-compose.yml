@@ -1,12 +1,13 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: resume
       POSTGRES_PASSWORD: resume
       POSTGRES_DB: resume_db
     ports:
-      - "5434:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -17,8 +18,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -27,9 +29,10 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    restart: unless-stopped
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -38,6 +41,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,14 +57,15 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       REDIS_URL: redis://redis:6379
       UPLOAD_FOLDER: /app/uploads
-      CORS_ORIGIN: http://localhost:8080
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
     volumes:
       - uploads:/app/uploads
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
   ai-worker:
     build: ./ai-worker
+    restart: unless-stopped
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -72,16 +77,18 @@ services:
       UPLOAD_FOLDER: /app/uploads
       LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}
+      MODEL_DTYPE: ${MODEL_DTYPE:-}
     volumes:
       - uploads:/app/uploads
       - hfcache:/app/hf-cache
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "8080:80"
+      - "${FRONTEND_PORT:-8080}:80"
 
 volumes:
   pgdata:
