@@ -45,7 +45,7 @@ export default function UploadDropzone({ onUpload, uploading }) {
           <UploadCloud size={26} />
         </motion.div>
         <div className="dz-title">Drop your resume here, or click to browse</div>
-        <div className="dz-hint">PDF or DOCX · up to 5 MB</div>
+        <div className="dz-hint">PDF or DOCX · up to 10 MB</div>
         <input
           ref={inputRef}
           type="file"

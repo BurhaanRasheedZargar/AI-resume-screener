@@ -182,7 +182,7 @@ npm run dev                  # http://localhost:5173 (proxies /api to :3000)
 | `PORT`          | API port                                     | `3000`                   |
 | `CORS_ORIGIN`   | Comma-separated allowed origins              | `http://localhost:5173`  |
 | `UPLOAD_FOLDER` | Upload directory                             | `./uploads`              |
-| `MAX_UPLOAD_MB` | Max upload size (MB)                         | `5`                      |
+| `MAX_UPLOAD_MB` | Max upload size (MB)                         | `10`                     |
 
 ### AI Worker (`ai-worker/.env`)
 

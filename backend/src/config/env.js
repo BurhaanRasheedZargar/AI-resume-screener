@@ -17,7 +17,7 @@ const schema = z.object({
     CORS_ORIGIN: z.string().default('http://localhost:5173'),
 
     UPLOAD_FOLDER: z.string().default('./uploads'),
-    MAX_UPLOAD_MB: z.coerce.number().positive().default(5),
+    MAX_UPLOAD_MB: z.coerce.number().positive().default(10),
 });
 
 const parsed = schema.safeParse(process.env);
