@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileText, Briefcase, Compass, Plus, Inbox, Sparkles } from 'lucide-react';
 import { api, errorMessage } from '../api';
@@ -94,6 +94,25 @@ export default function Dashboard() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const refreshActiveTab = useCallback(() => {
+    if (activeTab === 'resumes') loadResumes();
+    else if (activeTab === 'jobs') loadJobs();
+    else if (activeTab === 'browse') loadAllJobs();
+  }, [activeTab]);
+
+  // Refetch the current tab's data when switching tabs (after the first load)
+  // so newly uploaded resumes / posted jobs show up without a full reload.
+  useEffect(() => {
+    if (loaded) refreshActiveTab();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Refetch when the window regains focus, to stay in sync across sessions/tabs.
+  useEffect(() => {
+    window.addEventListener('focus', refreshActiveTab);
+    return () => window.removeEventListener('focus', refreshActiveTab);
+  }, [refreshActiveTab]);
 
   const handleUpload = async (file) => {
     setUploading(true);

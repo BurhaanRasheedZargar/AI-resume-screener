@@ -84,7 +84,8 @@ exports.getResumeResult = asyncHandler(async (req, res) => {
 });
 
 exports.getMyResumes = asyncHandler(async (req, res) => {
-    const { page, limit } = req.query;
+    const page = Math.max(1, Number(req.query?.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query?.limit) || 20));
     const skip = (page - 1) * limit;
 
     const [resumes, total] = await Promise.all([
