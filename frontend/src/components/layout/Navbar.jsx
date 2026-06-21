@@ -1,10 +1,18 @@
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { FileCheck, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { IconButton } from '../ui/Primitives';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
+
   const initials = (user?.name || '?')
     .split(' ')
     .map((w) => w[0])
@@ -37,7 +45,7 @@ export default function Navbar() {
               <span className="role">{user?.role}</span>
             </span>
           </div>
-          <IconButton onClick={logout} title="Log out" aria-label="Log out">
+          <IconButton onClick={handleLogout} title="Log out" aria-label="Log out">
             <LogOut size={17} />
           </IconButton>
         </div>
